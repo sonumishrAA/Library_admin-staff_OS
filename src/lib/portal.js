@@ -1,3 +1,17 @@
+// ─────────────────────────────────────────────────────────────
+// portal.js — Shared utilities for the Library Owner/Staff Portal
+//
+// This file contains pure frontend logic:
+// - Currency/date formatting
+// - Pricing calculations (shift + combo + locker)
+// - Locker eligibility checks
+// - Duration plan resolution
+//
+// IMPORTANT: No seat selection logic lives here.
+// Seats are ALWAYS auto-assigned by the backend based on
+// shift + gender. The frontend never picks a seat_number.
+// ─────────────────────────────────────────────────────────────
+
 export const formatCurrency = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
 
 export const formatDate = (value) => {
@@ -26,11 +40,13 @@ export const monthsFromPlan = (value) => {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 1;
 };
 
+// Normalize shift IDs: deduplicate, trim, sort for consistent comparison
 const normalizeShiftIds = (shiftIds) => {
   const list = Array.isArray(shiftIds) ? shiftIds : [shiftIds];
   return [...new Set(list.map((item) => String(item || '').trim()).filter(Boolean))].sort();
 };
 
+// Check if two sorted shift arrays are identical (used for combo matching)
 const sameSet = (left, right) => left.length === right.length && left.every((item, index) => item === right[index]);
 
 const feeForDuration = (feePlans, durationMonths, fallbackMonthly = 0) => {
@@ -43,26 +59,43 @@ const feeForDuration = (feePlans, durationMonths, fallbackMonthly = 0) => {
   return Number.isFinite(Number(fallbackMonthly)) ? Number(fallbackMonthly) * duration : 0;
 };
 
+// ─────────────────────────────────────────────────────────────
+// buildPricingOptions — Creates a unified list of all bookable options
+//
+// Returns both base shifts and combos in a single array.
+// Each option has:
+//   - type: 'shift' or 'combo'
+//   - shift_ids: array of BASE shift UUIDs
+//     (for a combo like Morning+Afternoon, shift_ids = [morning_uuid, afternoon_uuid])
+//   - fee_plans: pricing tiers by duration (e.g. {"1": 500, "3": 1200})
+//   - duration_hours: total hours covered
+//
+// The frontend shows these as a dropdown. When user selects one,
+// shift_ids gets sent to the backend which expands combos to base
+// shifts for seat_occupancy insertion.
+// ─────────────────────────────────────────────────────────────
 export const buildPricingOptions = (context) => {
   const shifts = context?.shifts || [];
   const combos = context?.combined_shift_pricing || [];
   return [
+    // Base shifts (Morning, Afternoon, Evening, Night)
     ...shifts.map((shift) => ({
       type: 'shift',
       id: shift.id,
       key: `shift:${shift.id}`,
       label: shift.label,
-      shift_ids: [shift.id],
+      shift_ids: [shift.id],  // Single base shift
       duration_hours: Number(shift.duration_hours || 0),
       fee_plans: shift.fee_plans || {},
       monthly_fee: Number(shift.monthly_fee || 0),
     })),
+    // Combo shifts (Morning+Afternoon, Morning+Night, MAEN, etc.)
     ...combos.map((combo) => ({
       type: 'combo',
       id: combo.id,
       key: `combo:${combo.id}`,
       label: combo.label,
-      shift_ids: normalizeShiftIds(combo.shift_ids || []),
+      shift_ids: normalizeShiftIds(combo.shift_ids || []),  // Array of base shift UUIDs
       duration_hours: normalizeShiftIds(combo.shift_ids || []).reduce((sum, shiftId) => {
         const match = shifts.find((item) => item.id === shiftId);
         return sum + Number(match?.duration_hours || 0);
@@ -109,6 +142,12 @@ export const calculateAdmissionAmount = (context, shiftIds, durationMonths, want
 
 
 
+// ─────────────────────────────────────────────────────────────
+// getLockerOptions — Returns available lockers for a student's gender
+//
+// Filters out already-occupied lockers and matches gender
+// (any-gender lockers are always available)
+// ─────────────────────────────────────────────────────────────
 export const getLockerOptions = (context, gender) => {
   return (context?.lockers || [])
     .filter((locker) => !locker.is_occupied)

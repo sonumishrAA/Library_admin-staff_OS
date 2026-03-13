@@ -1,3 +1,22 @@
+// ─────────────────────────────────────────────────────────────
+// SeatsPage.jsx — Visual seat map for the library
+//
+// Data source: contextData.seat_map from get-library-context
+// Each seat has: seat_number, gender, occupants[]
+// Each occupant has: student_name, shift_label, locker_number,
+//                    ends_on, membership_id
+//
+// CONFLICT DETECTION (line ~110):
+// - Groups occupants by shift_label
+// - If 2+ students share the same base shift on the same seat
+//   → Shows a red "Conflict in Morning Shift" warning
+// - This is a DISPLAY-ONLY check — the real conflict prevention
+//   happens in the backend via expandToBaseShiftIds()
+//
+// SEAT CHANGE:
+// - Owner/staff can reassign a student to a different seat
+// - Calls change-seat edge function which validates availability
+// ─────────────────────────────────────────────────────────────
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/PageHeader';

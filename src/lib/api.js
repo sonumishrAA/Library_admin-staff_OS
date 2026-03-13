@@ -1,3 +1,20 @@
+// ─────────────────────────────────────────────────────────────
+// api.js — API wrapper for Supabase Edge Functions
+//
+// Architecture:
+// - All requests go through requestFunction() which:
+//   1. Sets apikey + Authorization headers with the ANON key
+//      (required by Supabase Gateway to accept the request)
+//   2. Sends the portal JWT token in x-portal-authorization
+//      (used by our edge functions for user auth/RBAC)
+// - Each edge function handles its own seat/locker/pricing logic
+// - The frontend never manually picks seat numbers
+//
+// Auth flow:
+//   login() → gets JWT token → stored in AuthContext
+//   All subsequent calls pass this token via x-portal-authorization
+// ─────────────────────────────────────────────────────────────
+
 const getSupabaseUrl = () => {
   const url = import.meta.env.VITE_SUPABASE_URL;
   if (!url) {

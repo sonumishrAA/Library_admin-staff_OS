@@ -1,3 +1,24 @@
+// ─────────────────────────────────────────────────────────────
+// AdmissionPage.jsx — New student admission form
+//
+// Flow:
+// 1. User fills student details (name, phone, gender, address)
+// 2. User picks a shift or combo from the dropdown
+//    (buildPricingOptions creates the list from context)
+// 3. User picks plan duration (1 month, 3 months, etc.)
+// 4. Optionally assigns a locker
+// 5. Submits → calls create-admission edge function
+//
+// SEAT LOGIC:
+// - No seat dropdown exists — seat is auto-assigned by backend
+// - Backend's ensureSeatSelection() finds the first available seat
+//   that matches the student's gender and isn't occupied for
+//   any of the BASE shifts in the selected combo
+// - Example: Student picks "Morning+Afternoon" combo
+//   → Backend expands to [morning_uuid, afternoon_uuid]
+//   → Finds a seat where BOTH morning AND afternoon are free
+//   → Creates 2 seat_occupancy rows (one per base shift)
+// ─────────────────────────────────────────────────────────────
 import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import PageHeader from '../components/PageHeader';
