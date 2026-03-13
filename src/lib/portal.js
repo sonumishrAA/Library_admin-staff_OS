@@ -112,25 +112,45 @@ export const resolvePricingOption = (context, shiftIds) => {
   return options.find((option) => sameSet(normalizeShiftIds(option.shift_ids), normalized)) || null;
 };
 
+export const checkLockerEligibility = (context, shiftIds, gender) => {
+  const option = resolvePricingOption(context, shiftIds);
+  if (!option) return { eligible: false, fee: 0 };
+  
+  const rules = context?.locker_policies || [];
+  if (!rules.length) return { eligible: false, fee: 0 };
+  
+  const matchingPolicy = rules.find((policy) => {
+    const policyGender = String(policy.gender || 'any').toLowerCase();
+    if (policyGender !== 'any' && policyGender !== String(gender || 'any').toLowerCase()) return false;
+    
+    const eligible = String(policy.eligible_shift_type || 'any');
+    if (eligible === '24h_only') return Number(option.duration_hours || 0) >= 24;
+    if (eligible === '12h_plus') return Number(option.duration_hours || 0) >= 12;
+    if (eligible === 'single_shift') return Number(option.duration_hours || 0) < 12;
+    return true;
+  });
+  
+  if (matchingPolicy) {
+    return { eligible: true, fee: Number(matchingPolicy.monthly_fee || 0) };
+  }
+  return { eligible: false, fee: 0 };
+};
+
 export const calculateAdmissionAmount = (context, shiftIds, durationMonths, wantsLocker, gender) => {
   const option = resolvePricingOption(context, shiftIds);
   if (!option) {
     return { amount: 0, lockerAmount: 0, total: 0, durationHours: 0, option: null };
   }
   const amount = feeForDuration(option.fee_plans, durationMonths, option.monthly_fee);
+  
   let lockerAmount = 0;
   if (wantsLocker) {
-    const matchingPolicy = (context?.locker_policies || []).find((policy) => {
-      const policyGender = String(policy.gender || 'any').toLowerCase();
-      if (policyGender !== 'any' && policyGender !== String(gender || 'any').toLowerCase()) return false;
-      const eligible = String(policy.eligible_shift_type || 'any');
-      if (eligible === '24h_only') return Number(option.duration_hours || 0) >= 24;
-      if (eligible === '12h_plus') return Number(option.duration_hours || 0) >= 12;
-      if (eligible === 'single_shift') return Number(option.duration_hours || 0) < 12;
-      return true;
-    });
-    lockerAmount = Number(matchingPolicy?.monthly_fee || 0) * monthsFromPlan(durationMonths);
+    const eligibility = checkLockerEligibility(context, shiftIds, gender);
+    if (eligibility.eligible) {
+      lockerAmount = eligibility.fee * monthsFromPlan(durationMonths);
+    }
   }
+  
   return {
     amount,
     lockerAmount,
@@ -162,8 +182,57 @@ export const uniqueMonthOptions = (context, shiftIds) => {
   const option = resolvePricingOption(context, shiftIds);
   if (!option) return [1];
   const entries = Object.keys(option.fee_plans || {})
+    .filter((key) => {
+      const val = option.fee_plans[key];
+      return val !== null && val !== "" && !Number.isNaN(Number(val));
+    })
     .map((key) => Number(key))
     .filter((value) => Number.isFinite(value) && value > 0)
     .sort((left, right) => left - right);
   return entries.length ? entries : [1];
+};
+
+// ─────────────────────────────────────────────────────────────
+// getPredictedSeat — Client-side prediction of auto-assigned seat
+// ─────────────────────────────────────────────────────────────
+export const getPredictedSeat = (context, shiftIds, gender) => {
+  if (!shiftIds || !shiftIds.length) return null;
+  
+  const normalizedShifts = normalizeShiftIds(shiftIds);
+  const seats = context?.seat_map || [];
+  
+  const sortedSeats = [...seats].sort((a, b) => {
+    const parseSeat = (s) => {
+      const match = String(s).match(/^([a-zA-Z]+)(\d+)/);
+      if (match) return { type: match[1].toUpperCase(), num: parseInt(match[2], 10) };
+      return { type: 'Z', num: 99999 };
+    };
+    const aSeat = parseSeat(a.seat_number);
+    const bSeat = parseSeat(b.seat_number);
+    if (aSeat.type !== bSeat.type) return aSeat.type.localeCompare(bSeat.type);
+    return aSeat.num - bSeat.num;
+  });
+  
+  for (const seat of sortedSeats) {
+    const seatGender = String(seat.gender || "any").toLowerCase();
+    if (seatGender !== "any" && seatGender !== String(gender || "any").toLowerCase()) {
+      continue;
+    }
+    
+    let isConflict = false;
+    for (const shiftId of normalizedShifts) {
+      const shiftObj = (context.shifts || []).find(s => s.id === shiftId);
+      if (shiftObj) {
+         if ((seat.occupants || []).some(occ => occ.shift_label === shiftObj.label)) {
+           isConflict = true;
+           break;
+         }
+      }
+    }
+    
+    if (!isConflict) {
+      return seat.seat_number;
+    }
+  }
+  return null;
 };

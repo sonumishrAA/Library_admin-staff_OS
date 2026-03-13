@@ -25,7 +25,7 @@ import PageHeader from '../components/PageHeader';
 import { useShellContext } from '../components/useShellContext';
 import { useAuth } from '../context/AuthContext';
 import { portalApi } from '../lib/api';
-import { buildPricingOptions, calculateAdmissionAmount, formatCurrency, getLockerOptions, monthsFromPlan, todayDate, uniqueMonthOptions } from '../lib/portal';
+import { buildPricingOptions, calculateAdmissionAmount, formatCurrency, getLockerOptions, monthsFromPlan, todayDate, uniqueMonthOptions, getPredictedSeat, checkLockerEligibility } from '../lib/portal';
 
 const initialForm = {
   full_name: '',
@@ -55,6 +55,9 @@ export default function AdmissionPage() {
   const durationOptions = uniqueMonthOptions(contextData, activeOption?.shift_ids || []);
   const computedAmount = calculateAdmissionAmount(contextData, activeOption?.shift_ids || [], monthsFromPlan(form.plan_duration), form.assign_locker, form.gender);
   const lockerOptions = getLockerOptions(contextData, form.gender);
+  
+  const predictedSeat = getPredictedSeat(contextData, activeOption?.shift_ids || [], form.gender);
+  const lockerEligibility = checkLockerEligibility(contextData, activeOption?.shift_ids || [], form.gender);
 
   const updateField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
@@ -155,15 +158,29 @@ export default function AdmissionPage() {
           <label className="toggle-field">
             <span>Seat allocation</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 0' }}>
-              <span className="material-symbols-rounded" style={{ color: 'var(--green)', fontSize: '18px' }}>auto_awesome</span>
-              <span style={{ fontSize: '0.85rem', color: 'var(--navy-soft)' }}>Auto-assigned based on shift & gender</span>
+              <span className="material-symbols-rounded" style={{ color: predictedSeat ? 'var(--green)' : 'var(--red)', fontSize: '18px' }}>
+                {predictedSeat ? 'auto_awesome' : 'error'}
+              </span>
+              <span style={{ fontSize: '0.85rem', color: predictedSeat ? 'var(--navy-soft)' : 'var(--red)', fontWeight: predictedSeat ? 400 : 500 }}>
+                {predictedSeat ? `Seat ${predictedSeat} will be auto-assigned` : 'No seats available for this shift/gender'}
+              </span>
             </div>
           </label>
-          <label className="toggle-field">
+          <label className={`toggle-field ${!lockerEligibility.eligible ? 'disabled' : ''}`} style={{ opacity: lockerEligibility.eligible ? 1 : 0.6 }}>
             <span>Locker</span>
             <div className="toggle-field__inline">
-              <input type="checkbox" checked={form.assign_locker} onChange={(event) => updateField('assign_locker', event.target.checked)} />
-              <span>Assign locker now</span>
+              <input 
+                type="checkbox" 
+                checked={form.assign_locker && lockerEligibility.eligible} 
+                onChange={(event) => updateField('assign_locker', event.target.checked)}
+                disabled={!lockerEligibility.eligible} 
+              />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span>Assign locker now</span>
+                {!lockerEligibility.eligible && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--red)' }}>Not eligible based on policy</span>
+                )}
+              </div>
             </div>
           </label>
         </div>
